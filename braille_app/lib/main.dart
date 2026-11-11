@@ -4,15 +4,14 @@ import "dart:math";
 
 
 class BrailleAlphabet {
-  static const List<int> letters = [
+  static const List<int> binaryLetterSums = [
     1, 3, 9, 25, 17, 11, 27, 19, 10, 26, // A-J
     5, 7, 13, 29, 21, 15, 31, 23, 14, 30, // K-T
     37, 39, 58, 45, 61, 53               // U-Z
   ];
 
-  static int getCode(int letter) {
-    return letters[letter];
-    // function to return the braille code for the asked letter
+  static int getCurrentLetterCode(int letterCode) {
+    return binaryLetterSums[letterCode];
   }
 }
 
@@ -30,17 +29,19 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   Set<int> pressedButtons = {};
   Set<int> correctButtons = {};
-  int currentIndex = 0;
-  String toType = "";
+  int wordAmount = 5;
+  int currentLetterIndex = 0;
+  String randomisedText = "";
   Map<int, Color> letterColors = {};
   Random random = Random();
+  // random import
 
-  Future<void> loadRandomWord() async {
+  Future<void> loadRandomWords() async {
     String csvData = await rootBundle.loadString(
       'assets/braille_words_100.csv'
-    ); // csv import
+    );
 
-    List<String> words = csvData
+    List<String> chosenWords = csvData
         .split(RegExp(r'\r?\n'))
         .map((word) => word.trim())
         .where((word) => word.isNotEmpty)
@@ -49,78 +50,76 @@ class _MyAppState extends State<MyApp> {
 
     List<String> randomWords = [];
 
-    for (int i = 0; i < 5; i++) {
-      int randomIndex = random.nextInt(words.length);
+    for (int i = 0; i < wordAmount; i++) {
+      int randomIndex = random.nextInt(chosenWords.length);
 
-      randomWords.add(words.removeAt(randomIndex));
-    } // select 5 words to show
+      randomWords.add(chosenWords.removeAt(randomIndex));
+    }
 
     if (!mounted) return;
 
     setState(() {
-      toType = randomWords.join(' ');
-      currentIndex = 0;
+      randomisedText = randomWords.join(' ');
+      currentLetterIndex = 0;
       letterColors.clear();
       pressedButtons.clear();
     });
   }
 
-  void submitBraille(String savedBraille) {
-    if (currentIndex >= toType.length) {
+  void submitBrailleButtons(String savedBraille) {
+    if (currentLetterIndex >= randomisedText.length) {
       print("finished");
       return;
     }
 
-    String nextLetter = toType[currentIndex];
-    // change toType to the next letter
+    String nextLetter = randomisedText[currentLetterIndex];
 
-    int letterIndex =
+    int nextletterIndex =
         nextLetter.toLowerCase().codeUnitAt(0) - 'a'.codeUnitAt(0);
         // gets index of the next letter in the alphabet (from 0)
 
-    int submittedCode = pressedButtons.fold<int>(
+    int submittedButtonBinary = pressedButtons.fold<int>(
       0,
       (sum, dot) => sum + dot,
     ); // adds the dot value to sum to compare it to the sum of other characters in binary
 
     bool isCorrect =
-        submittedCode == BrailleAlphabet.getCode(letterIndex);
+        submittedButtonBinary == BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
 
-    setState(() { // update app state
-      letterColors[currentIndex] =
+    setState(() {
+      letterColors[currentLetterIndex] =
           isCorrect ? Colors.grey : Colors.red;
       // coloring of the word
 
-      currentIndex++;
-      // move index
+      currentLetterIndex++;
       pressedButtons.clear();
       correctButtons.clear();
-      // reset buttons
+      // clear area and move index
 
-      while (currentIndex < toType.length &&
-          toType[currentIndex] == ' ') {
-        currentIndex++;
-      } // if the words arent finished, and next letter is space, 1 more
+      while (currentLetterIndex < randomisedText.length &&
+          randomisedText[currentLetterIndex] == ' ') {
+        currentLetterIndex++;
+      }
     });
   }
 
-  void displayWrongLetter() {
-    int letterIndex =
-        toType[currentIndex].toLowerCase().codeUnitAt(0) -
+  void displayCorrectButtons() {
+    int nextletterIndex =
+        randomisedText[currentLetterIndex].toLowerCase().codeUnitAt(0) -
         'a'.codeUnitAt(0);
-        // letter index of last letter in alphabet (currentIndex gets pushed back when u press backspace)
+        // letter index of last letter in alphabet (currentLetterIndex gets pushed back when u press backspace)
 
-    int correctCode = BrailleAlphabet.getCode(letterIndex);
+    int correctLetterCode = BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
 
     correctButtons.clear();
     // clears the correct buttons so it can replace them if you press backspace multiple times
 
     for (int i = 0; i < 6; i++) {
-      int dotValue = 1 << i;
+      int dotBinaryValue = 1 << i;
       // binary calculation
 
-      if ((correctCode & dotValue) != 0) {
-        correctButtons.add(dotValue);
+      if ((correctLetterCode & dotBinaryValue) != 0) {
+        correctButtons.add(dotBinaryValue);
       } // ai generated, it compares the binaries of both and if it isnt 0 (so there is a difference) it adds the buttons' value to correctButtons to display
     }
   }
@@ -129,7 +128,7 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
 
-    loadRandomWord();
+    loadRandomWords();
   }
 
   @override
@@ -137,11 +136,11 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
 
-      home: Scaffold( // what you see when you open the app
+      home: Scaffold(
         backgroundColor: Colors.white,
 
-        body: Center( // core
-          child: Column( // whats in body
+        body: Center(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             // this has to be outside of children since you're aligning the column, not the innards
 
@@ -149,19 +148,17 @@ class _MyAppState extends State<MyApp> {
 
               Text.rich( // word display
                 TextSpan(
-                  children: List.generate(toType.length, (index) {
+                  children: List.generate(randomisedText.length, (index) {
                     return TextSpan(
-                      text: toType[index], // words to type
+                      text: randomisedText[index],
                       style: TextStyle(
 
-                        decoration: index == currentIndex
+                        decoration: index == currentLetterIndex
                             ? TextDecoration.underline 
                             // underline the curr letter
                             : TextDecoration.none,
 
                         color: letterColors[index] ?? Colors.black,
-                        // get the color if it was wrong or right, otherwise make it black
-
                         fontSize: 30,
                         fontWeight: FontWeight.bold,
                       ),
@@ -196,14 +193,14 @@ class _MyAppState extends State<MyApp> {
                               ),
 
                               onPressed: () {
-                                int dotValue = 1 << (col * 3 + row);
+                                int dotBinaryValue = 1 << (col * 3 + row);
 
                                 setState(() {
-                                  if (pressedButtons.contains(dotValue)) {
-                                    pressedButtons.remove(dotValue);
+                                  if (pressedButtons.contains(dotBinaryValue)) {
+                                    pressedButtons.remove(dotBinaryValue);
                                     // if a pressed button is inside and you press it, it reverts color
                                   } else {
-                                    pressedButtons.add(dotValue);
+                                    pressedButtons.add(dotBinaryValue);
                                   }
                                 });
                               },
@@ -226,7 +223,7 @@ class _MyAppState extends State<MyApp> {
 
                   ElevatedButton(
                     onPressed: () {
-                      submitBraille("");
+                      submitBrailleButtons("");
                     },
                     child: const Text("SUBMIT"),
                   ),
@@ -236,25 +233,24 @@ class _MyAppState extends State<MyApp> {
                   ElevatedButton(
                     onPressed: () {
                       setState(() {
-                        if (currentIndex > 0) {
+                        if (currentLetterIndex > 0) {
                           // just a check so you don't go under 0,
                           // it changes index and resets letter color
 
-                          currentIndex--;
+                          currentLetterIndex--;
 
-                          while (currentIndex > 0 &&
-                              toType[currentIndex] == ' ') {
-                            currentIndex--;
+                          while (currentLetterIndex > 0 &&
+                              randomisedText[currentLetterIndex] == ' ') {
+                            currentLetterIndex--;
                           } // if you backspace and go over a space, it goes 1 more
 
-                          letterColors.remove(currentIndex);
+                          letterColors.remove(currentLetterIndex);
 
-                          displayWrongLetter();
+                          displayCorrectButtons();
                         }
 
                         pressedButtons.clear();
                       });
-                      // reset buttons to be empty
                     },
                     child: const Text("BACKSPACE"),
                   ),
