@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import "package:flutter/services.dart";
 import "dart:math";
 
+
 class BrailleAlphabet {
   static const List<int> letters = [
     1, 3, 9, 25, 17, 11, 27, 19, 10, 26, // A-J
@@ -28,6 +29,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   Set<int> pressedButtons = {};
+  Set<int> correctButtons = {};
   int currentIndex = 0;
   String toType = "";
   Map<int, Color> letterColors = {};
@@ -74,6 +76,7 @@ class _MyAppState extends State<MyApp> {
 
     int letterIndex =
         nextLetter.toLowerCase().codeUnitAt(0) - 'a'.codeUnitAt(0);
+        // gets index of the next letter in the alphabet (from 0)
 
     int submittedCode = pressedButtons.fold<int>(
       0,
@@ -83,8 +86,6 @@ class _MyAppState extends State<MyApp> {
     bool isCorrect =
         submittedCode == BrailleAlphabet.getCode(letterIndex);
 
-    print(isCorrect);
-
     setState(() { // update app state
       letterColors[currentIndex] =
           isCorrect ? Colors.grey : Colors.red;
@@ -93,6 +94,7 @@ class _MyAppState extends State<MyApp> {
       currentIndex++;
       // move index
       pressedButtons.clear();
+      correctButtons.clear();
       // reset buttons
 
       while (currentIndex < toType.length &&
@@ -100,6 +102,24 @@ class _MyAppState extends State<MyApp> {
         currentIndex++;
       } // if the words arent finished, and next letter is space, 1 more
     });
+  }
+
+  void displayWrongLetter() {
+    int letterIndex =
+        toType[currentIndex].toLowerCase().codeUnitAt(0) -
+        'a'.codeUnitAt(0);
+
+    int correctCode = BrailleAlphabet.getCode(letterIndex);
+
+    correctButtons.clear();
+
+    for (int i = 0; i < 6; i++) {
+      int dotValue = 1 << i;
+
+      if ((correctCode & dotValue) != 0) {
+        correctButtons.add(dotValue);
+      }
+    }
   }
 
   @override
@@ -167,7 +187,9 @@ class _MyAppState extends State<MyApp> {
                                   1 << (col * 3 + row)
                                 ) // basically (col * 3 + row) squared
                                     ? Colors.blue
-                                    : Colors.grey, // blue if active, grey if not
+                                    : correctButtons.contains(1 << (col * 3 + row))
+                                      ? const Color.fromARGB(255, 168, 189, 198)
+                                      : Colors.grey, // blue if active, grey if not
                               ),
 
                               onPressed: () {
@@ -212,7 +234,7 @@ class _MyAppState extends State<MyApp> {
                     onPressed: () {
                       setState(() {
                         if (currentIndex > 0) {
-                        // just a check so you don't go under 0,
+                          // just a check so you don't go under 0,
                           // it changes index and resets letter color
 
                           currentIndex--;
@@ -223,6 +245,8 @@ class _MyAppState extends State<MyApp> {
                           } // if you backspace and go over a space, it goes 1 more
 
                           letterColors.remove(currentIndex);
+
+                          displayWrongLetter();
                         }
 
                         pressedButtons.clear();
