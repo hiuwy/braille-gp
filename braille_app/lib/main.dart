@@ -108,17 +108,20 @@ class _MyAppState extends State<MyApp> {
     int letterIndex =
         toType[currentIndex].toLowerCase().codeUnitAt(0) -
         'a'.codeUnitAt(0);
+        // letter index of last letter in alphabet (currentIndex gets pushed back when u press backspace)
 
     int correctCode = BrailleAlphabet.getCode(letterIndex);
 
     correctButtons.clear();
+    // clears the correct buttons so it can replace them if you press backspace multiple times
 
     for (int i = 0; i < 6; i++) {
       int dotValue = 1 << i;
+      // binary calculation
 
       if ((correctCode & dotValue) != 0) {
         correctButtons.add(dotValue);
-      }
+      } // ai generated, it compares the binaries of both and if it isnt 0 (so there is a difference) it adds the buttons' value to correctButtons to display
     }
   }
 
