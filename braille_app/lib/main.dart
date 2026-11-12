@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import "package:flutter/services.dart";
 import "dart:math";
+import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
+import 'dart:async';
 
 
 class BrailleAlphabet {
@@ -27,6 +29,28 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  final FlutterReactiveBle ble = FlutterReactiveBle();
+
+  static final esp32ServiceUUID = Uuid.parse(
+    '4fafc201-1fb5-459e-8fcc-c5c9c331914b'
+  );
+
+  static final inputUUID = Uuid.parse(
+    'beb5483e-36e1-4688-b7f5-ea07361b26a8'
+  );
+
+  static final outputUUID = Uuid.parse(
+    'a0c14c2b-ce60-4e5e-9a25-946aa608cb37'
+  );
+
+  String? esp32ID;
+
+  bool isConnected = false;
+
+  StreamSubscription<DiscoveredDevice>? scanSubscription;
+  StreamSubscription<ConnectionStateUpdate>? connectionSubscription;
+  StreamSubscription<List<int>>? inputSubscription;
+
   Set<int> pressedButtons = {};
   Set<int> correctButtons = {};
   int wordAmount = 5;
@@ -35,6 +59,39 @@ class _MyAppState extends State<MyApp> {
   Map<int, Color> letterColors = {};
   Random random = Random();
   // random import
+
+  void scanForBrailleDevice() {
+    if (ble.status != BleStatus.ready){
+      print("bluetooth isnt connected");
+      return;
+    }
+
+    print("looking for braillelearner");
+
+    connectionSubscription?.cancel();
+
+    scanSubscription = ble.scanForDevices(
+      withServices: [esp32ServiceUUID],
+      scanMode: ScanMode.lowLatency,
+      ).listen((device) {
+        
+        print("found device called ${device.name}");
+
+        if (device.name == "BrailleLeaner") {
+          scanSubscription?.cancel();
+
+          setState(() {
+            esp32ID = device.id;
+          });
+
+          print("braillelearner found");
+          print("device id: $esp32ID");
+        }
+
+      }, onError: (error) {
+        print("scanning error: $error");
+      });
+  }
 
   Future<void> loadRandomWords() async {
     String csvData = await rootBundle.loadString(
