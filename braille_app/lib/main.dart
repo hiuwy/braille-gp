@@ -68,7 +68,7 @@ class _MyAppState extends State<MyApp> {
 
     print("looking for braillelearner");
 
-    connectionSubscription?.cancel();
+    scanSubscription?.cancel();
 
     scanSubscription = ble.scanForDevices(
       withServices: [esp32ServiceUUID],
@@ -77,7 +77,7 @@ class _MyAppState extends State<MyApp> {
         
         print("found device called ${device.name}");
 
-        if (device.name == "BrailleLeaner") {
+        if (device.name == "BrailleLearner") {
           scanSubscription?.cancel();
 
           setState(() {
@@ -202,6 +202,10 @@ class _MyAppState extends State<MyApp> {
             // this has to be outside of children since you're aligning the column, not the innards
 
             children: [
+              ElevatedButton(
+                onPressed: scanForBrailleDevice,
+                child: const Text("FIND DEVICE"),
+              ),
 
               Text.rich( // word display
                 TextSpan(
