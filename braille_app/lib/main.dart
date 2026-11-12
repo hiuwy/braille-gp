@@ -3,6 +3,7 @@ import "package:flutter/services.dart";
 import "dart:math";
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
+import 'package:permission_handler/permission_handler.dart';
 
 
 class BrailleAlphabet {
@@ -60,38 +61,50 @@ class _MyAppState extends State<MyApp> {
   Random random = Random();
   // random import
 
-  void scanForBrailleDevice() {
-    if (ble.status != BleStatus.ready){
-      print("bluetooth isnt connected");
-      return;
-    }
+Future<void> scanForBrailleDevice() async {
 
-    print("looking for braillelearner");
+  final permissions = await [
+    Permission.bluetoothScan,
+    Permission.bluetoothConnect,
+  ].request();
 
-    scanSubscription?.cancel();
-
-    scanSubscription = ble.scanForDevices(
-      withServices: [esp32ServiceUUID],
-      scanMode: ScanMode.lowLatency,
-      ).listen((device) {
-        
-        print("found device called ${device.name}");
-
-        if (device.name == "BrailleLearner") {
-          scanSubscription?.cancel();
-
-          setState(() {
-            esp32ID = device.id;
-          });
-
-          print("braillelearner found");
-          print("device id: $esp32ID");
-        }
-
-      }, onError: (error) {
-        print("scanning error: $error");
-      });
+  if (!permissions[Permission.bluetoothScan]!.isGranted ||
+      !permissions[Permission.bluetoothConnect]!.isGranted) {
+    print("Bluetooth permissions not granted");
+    return;
   }
+
+  if (ble.status != BleStatus.ready) {
+    print("Bluetooth status: ${ble.status}");
+    return;
+  }
+
+  print("looking for braillelearner");
+
+  scanSubscription?.cancel();
+
+  scanSubscription = ble.scanForDevices(
+    withServices: [esp32ServiceUUID],
+    scanMode: ScanMode.lowLatency,
+  ).listen((device) {
+
+    print("found device called ${device.name}");
+
+    if (device.name == "BrailleLearner") {
+      scanSubscription?.cancel();
+
+      setState(() {
+        esp32ID = device.id;
+      });
+
+      print("braillelearner found");
+      print("device id: $esp32ID");
+
+    }
+  }, onError: (error) {
+    print("scanning error: $error");
+  });
+}
 
   Future<void> loadRandomWords() async {
     String csvData = await rootBundle.loadString(
@@ -216,7 +229,6 @@ class _MyAppState extends State<MyApp> {
 
                         decoration: index == currentLetterIndex
                             ? TextDecoration.underline 
-                            // underline the curr letter
                             : TextDecoration.none,
 
                         color: letterColors[index] ?? Colors.black,
