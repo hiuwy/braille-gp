@@ -61,50 +61,6 @@ class _MyAppState extends State<MyApp> {
   Random random = Random();
   // random import
 
-Future<void> scanForBrailleDevice() async {
-
-  final permissions = await [
-    Permission.bluetoothScan,
-    Permission.bluetoothConnect,
-  ].request();
-
-  if (!permissions[Permission.bluetoothScan]!.isGranted ||
-      !permissions[Permission.bluetoothConnect]!.isGranted) {
-    print("Bluetooth permissions not granted");
-    return;
-  }
-
-  if (ble.status != BleStatus.ready) {
-    print("Bluetooth status: ${ble.status}");
-    return;
-  }
-
-  print("looking for braillelearner");
-
-  scanSubscription?.cancel();
-
-  scanSubscription = ble.scanForDevices(
-    withServices: [esp32ServiceUUID],
-    scanMode: ScanMode.lowLatency,
-  ).listen((device) {
-
-    print("found device called ${device.name}");
-
-    if (device.name == "BrailleLearner") {
-      scanSubscription?.cancel();
-
-      setState(() {
-        esp32ID = device.id;
-      });
-
-      print("braillelearner found");
-      print("device id: $esp32ID");
-
-    }
-  }, onError: (error) {
-    print("scanning error: $error");
-  });
-}
 
   Future<void> loadRandomWords() async {
     String csvData = await rootBundle.loadString(
@@ -136,7 +92,109 @@ Future<void> scanForBrailleDevice() async {
     });
   }
 
-  void submitBrailleButtons(String savedBraille) {
+Future<void> scanForBrailleDevice() async {
+
+  final permissions = await [
+    Permission.bluetoothScan,
+    Permission.bluetoothConnect,
+  ].request();
+
+  if (!permissions[Permission.bluetoothScan]!.isGranted ||
+      !permissions[Permission.bluetoothConnect]!.isGranted) {
+    print("bluetooth permissions not granted");
+    return;
+  }
+
+  if (ble.status != BleStatus.ready) {
+    print("bluetooth status: ${ble.status}");
+    return;
+  }
+
+  print("looking for braillelearner");
+
+  scanSubscription?.cancel();
+
+  scanSubscription = ble.scanForDevices(
+    withServices: [esp32ServiceUUID],
+    scanMode: ScanMode.lowLatency,
+  ).listen((device) {
+
+    print("found device called ${device.name}");
+
+    if (device.name == "BrailleLearner") {
+      scanSubscription?.cancel();
+
+      setState(() {
+        esp32ID = device.id;
+      });
+
+      print("braillelearner found");
+      connectToBrailleDevice();
+      // when it finds braillelearner, stops scanning and connects to it
+    }
+  }, onError: (error) {
+    print("scanning error: $error");
+  });}
+  
+  void connectToBrailleDevice() { 
+    if (esp32ID == null) {
+      return;
+    }
+
+    print("connecting.");
+
+    connectionSubscription?.cancel();
+
+    connectionSubscription = ble.connectToDevice( // this performs the conncetion
+      id: esp32ID!,
+      servicesWithCharacteristicsToDiscover: {
+        esp32ServiceUUID: [inputUUID, outputUUID],
+      },
+      connectionTimeout: const Duration(seconds: 10),
+    ).listen((connectionState) {
+
+      print("connection state: ${connectionState.connectionState}");
+
+      if (connectionState.connectionState ==
+          DeviceConnectionState.connected) {
+        setState(() {
+          isConnected = true;
+        });
+
+        print("connected");
+        listenForBraille();
+      }
+
+    }, onError: (error) {
+      print("connection error: $error");
+    });
+  }
+
+  void listenForBraille() {
+    final characteristic = QualifiedCharacteristic(
+      serviceId: esp32ServiceUUID,
+      characteristicId: inputUUID,
+      deviceId: esp32ID!,
+    ); // bluetooth connection characteristic
+
+    inputSubscription?.cancel();
+
+    inputSubscription = ble.subscribeToCharacteristic(
+      characteristic,
+    ).listen((data) {
+
+      if (data.length == 1) {
+        int receivedInteger = data[0];
+        print("received integer: $receivedInteger");
+        submitBrailleButtons(receivedInteger);
+      }
+
+    }, onError: (error) {
+      print("notification error: $error");
+    });
+  }
+
+  Future<void> submitBrailleButtons([int? receivedInteger]) async {
     if (currentLetterIndex >= randomisedText.length) {
       print("finished");
       return;
@@ -148,7 +206,7 @@ Future<void> scanForBrailleDevice() async {
         nextLetter.toLowerCase().codeUnitAt(0) - 'a'.codeUnitAt(0);
         // gets index of the next letter in the alphabet (from 0)
 
-    int submittedButtonBinary = pressedButtons.fold<int>(
+    int submittedButtonBinary = receivedInteger ?? pressedButtons.fold<int>(
       0,
       (sum, dot) => sum + dot,
     ); // adds the dot value to sum to compare it to the sum of other characters in binary
@@ -159,18 +217,44 @@ Future<void> scanForBrailleDevice() async {
     setState(() {
       letterColors[currentLetterIndex] =
           isCorrect ? Colors.grey : Colors.red;
-      // coloring of the word
 
       currentLetterIndex++;
       pressedButtons.clear();
       correctButtons.clear();
-      // clear area and move index
 
       while (currentLetterIndex < randomisedText.length &&
           randomisedText[currentLetterIndex] == ' ') {
         currentLetterIndex++;
       }
     });
+
+    if (receivedInteger != null) {
+      print("sent result");
+      await sendBrailleResult(isCorrect);
+    }
+  }
+
+  Future<void> sendBrailleResult(bool isCorrect) async {
+    final characteristic = QualifiedCharacteristic(
+      serviceId: esp32ServiceUUID,
+      characteristicId: outputUUID,
+      deviceId: esp32ID!,
+    );
+
+    int command = isCorrect ? 0x01 : 0x02;
+    // sends a "1" byte if correct, else "2"
+
+    try {
+      await ble.writeCharacteristicWithResponse(
+        characteristic,
+        value: [command],
+      );
+
+      print("$command");
+
+    } catch (error) {
+      print("failed to send command: $error");
+    }
   }
 
   void displayCorrectButtons() {
@@ -186,7 +270,6 @@ Future<void> scanForBrailleDevice() async {
 
     for (int i = 0; i < 6; i++) {
       int dotBinaryValue = 1 << i;
-      // binary calculation
 
       if ((correctLetterCode & dotBinaryValue) != 0) {
         correctButtons.add(dotBinaryValue);
@@ -199,6 +282,10 @@ Future<void> scanForBrailleDevice() async {
     super.initState();
 
     loadRandomWords();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scanForBrailleDevice();
+    });
   }
 
   @override
@@ -220,7 +307,7 @@ Future<void> scanForBrailleDevice() async {
                 child: const Text("FIND DEVICE"),
               ),
 
-              Text.rich( // word display
+              Text.rich(
                 TextSpan(
                   children: List.generate(randomisedText.length, (index) {
                     return TextSpan(
@@ -278,7 +365,7 @@ Future<void> scanForBrailleDevice() async {
                                 });
                               },
 
-                              child: const Text(""), // button syntax
+                              child: const Text(""), 
                             ),
                           ),
                       ],
@@ -287,7 +374,6 @@ Future<void> scanForBrailleDevice() async {
               ),
 
               const SizedBox(height: 35),
-              // space between the thing before and after
 
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -296,7 +382,7 @@ Future<void> scanForBrailleDevice() async {
 
                   ElevatedButton(
                     onPressed: () {
-                      submitBrailleButtons("");
+                      submitBrailleButtons();
                     },
                     child: const Text("SUBMIT"),
                   ),
@@ -307,15 +393,13 @@ Future<void> scanForBrailleDevice() async {
                     onPressed: () {
                       setState(() {
                         if (currentLetterIndex > 0) {
-                          // just a check so you don't go under 0,
-                          // it changes index and resets letter color
 
                           currentLetterIndex--;
 
                           while (currentLetterIndex > 0 &&
                               randomisedText[currentLetterIndex] == ' ') {
                             currentLetterIndex--;
-                          } // if you backspace and go over a space, it goes 1 more
+                          }
 
                           letterColors.remove(currentLetterIndex);
 
