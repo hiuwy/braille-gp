@@ -12,7 +12,7 @@
         android:maxSdkVersion="30" />
 
     <application
-        android:label="braille_app"
+        android:label="Braillearner"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
