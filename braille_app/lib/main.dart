@@ -5,6 +5,8 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'TTS.dart';
+
 class BrailleAlphabet {
   static const List<int> binaryLetterSums = [
     1, 3, 9, 25, 17, 11, 27, 19, 10, 26,

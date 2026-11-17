@@ -75,6 +75,12 @@ class TTS {
   }
 }
 
+final TTS _sharedTts = TTS();
+
+/// Speaks [text] using the offline Piper TTS engine.
+Future<void> textToSpeech(String text) => _sharedTts.speak(text);
+
+
 void _generateSpeech(List<String> arguments) {
   final [directory, text, output] = arguments;
   sherpa.initBindings();
