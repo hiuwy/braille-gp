@@ -1,8 +1,10 @@
+
+import 'dart:async';
+import 'dart:math';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'dart:math';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
-import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 
 import "TTS.dart";
@@ -48,6 +50,7 @@ class _MyAppState extends State<MyApp> {
   String? esp32ID;
   bool isConnected = false;
 
+  StreamSubscription<BleStatus>? bleStatusSubscription;
   StreamSubscription<DiscoveredDevice>? scanSubscription;
   StreamSubscription<ConnectionStateUpdate>? connectionSubscription;
   StreamSubscription<List<int>>? inputSubscription;
@@ -62,6 +65,7 @@ class _MyAppState extends State<MyApp> {
   Map<int, Color> letterColors = {};
   Random random = Random();
 
+  // LEARN IS THE DEFAULT OPENING TAB
   int _selectedIndex = 1;
 
   void _onItemTapped(int index) {
@@ -70,6 +74,16 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  // SPEAK THE LETTER THAT THE USER NEEDS TO TYPE
+  void announceCurrentLetter() {
+    if (currentLetterIndex < randomisedText.length) {
+      final letter = randomisedText[currentLetterIndex];
+
+      //unawaited(textToSpeech(letter));
+    }
+  }
+
+  // LOAD RANDOM PRACTICE WORDS
   Future<void> loadRandomWords() async {
     String csvData = await rootBundle.loadString(
       'assets/braille_words_100.csv'
@@ -80,6 +94,11 @@ class _MyAppState extends State<MyApp> {
         .map((word) => word.trim())
         .where((word) => word.isNotEmpty)
         .toList();
+
+    if (chosenWords.length < wordAmount) {
+      debugPrint("Not enough words in the CSV file.");
+      return;
+    }
 
     List<String> randomWords = [];
 
@@ -95,9 +114,14 @@ class _MyAppState extends State<MyApp> {
       currentLetterIndex = 0;
       letterColors.clear();
       pressedButtons.clear();
+      correctButtons.clear();
     });
+
+    // ANNOUNCE THE FIRST LETTER
+    announceCurrentLetter();
   }
 
+  // FIND THE BRAILLELEARNER DEVICE
   Future<void> scanForBrailleDevice() async {
     final permissions = await [
       Permission.bluetoothScan,
@@ -106,44 +130,47 @@ class _MyAppState extends State<MyApp> {
 
     if (!permissions[Permission.bluetoothScan]!.isGranted ||
         !permissions[Permission.bluetoothConnect]!.isGranted) {
-      print("bluetooth permissions not granted");
+      debugPrint("Bluetooth permissions not granted");
       return;
     }
 
     if (ble.status != BleStatus.ready) {
-      print("bluetooth status: ${ble.status}");
+      debugPrint("Bluetooth status: ${ble.status}");
       return;
     }
 
-    print("looking for braillelearner");
+    debugPrint("Looking for BrailleLearner");
 
-    scanSubscription?.cancel();
+    await scanSubscription?.cancel();
 
     scanSubscription = ble.scanForDevices(
       withServices: [esp32ServiceUUID],
       scanMode: ScanMode.lowLatency,
     ).listen((device) {
-      print("found device called ${device.name}");
+      debugPrint("Found device called ${device.name}");
 
       if (device.name == "BrailleLearner") {
         scanSubscription?.cancel();
+
+        if (!mounted) return;
 
         setState(() {
           esp32ID = device.id;
         });
 
-        print("braillelearner found");
+        debugPrint("BrailleLearner found");
         connectToBrailleDevice();
       }
     }, onError: (error) {
-      print("scanning error: $error");
+      debugPrint("Scanning error: $error");
     });
   }
 
+  // CONNECT TO THE ESP32
   void connectToBrailleDevice() {
     if (esp32ID == null) return;
 
-    print("connecting.");
+    debugPrint("Connecting...");
 
     connectionSubscription?.cancel();
 
@@ -154,22 +181,34 @@ class _MyAppState extends State<MyApp> {
       },
       connectionTimeout: const Duration(seconds: 10),
     ).listen((connectionState) {
-      print("connection state: ${connectionState.connectionState}");
+      debugPrint("Connection state: ${connectionState.connectionState}");
 
       if (connectionState.connectionState ==
           DeviceConnectionState.connected) {
+        if (!mounted) return;
+
         setState(() {
           isConnected = true;
         });
 
-        print("connected");
+        debugPrint("Connected");
         listenForBraille();
       }
+
+      if (connectionState.connectionState ==
+          DeviceConnectionState.disconnected) {
+        if (!mounted) return;
+
+        setState(() {
+          isConnected = false;
+        });
+      }
     }, onError: (error) {
-      print("connection error: $error");
+      debugPrint("Connection error: $error");
     });
   }
 
+  // LISTEN FOR BRAILLE INPUT FROM THE ESP32
   void listenForBraille() {
     final characteristic = QualifiedCharacteristic(
       serviceId: esp32ServiceUUID,
@@ -184,24 +223,33 @@ class _MyAppState extends State<MyApp> {
     ).listen((data) {
       if (data.length == 1) {
         int receivedInteger = data[0];
-        print("received integer: $receivedInteger");
+
+        debugPrint("Received integer: $receivedInteger");
+
         submitBrailleButtons(receivedInteger);
       }
     }, onError: (error) {
-      print("notification error: $error");
+      debugPrint("Notification error: $error");
     });
   }
 
+  // CHECK THE SUBMITTED BRAILLE LETTER
   Future<void> submitBrailleButtons([int? receivedInteger]) async {
     if (currentLetterIndex >= randomisedText.length) {
-      print("finished");
+      debugPrint("Exercise finished");
       return;
     }
 
     String nextLetter = randomisedText[currentLetterIndex];
 
     int nextletterIndex =
-        nextLetter.toLowerCase().codeUnitAt(0) - 'a'.codeUnitAt(0);
+        nextLetter.toLowerCase().codeUnitAt(0) -
+        'a'.codeUnitAt(0);
+
+    if (nextletterIndex < 0 || nextletterIndex >= 26) {
+      debugPrint("Invalid letter: $nextLetter");
+      return;
+    }
 
     int submittedButtonBinary = receivedInteger ?? pressedButtons.fold<int>(
       0,
@@ -217,20 +265,31 @@ class _MyAppState extends State<MyApp> {
           isCorrect ? Colors.grey : Colors.red;
 
       currentLetterIndex++;
+
       pressedButtons.clear();
       correctButtons.clear();
 
+      // SKIP SPACES BETWEEN WORDS
       while (currentLetterIndex < randomisedText.length &&
           randomisedText[currentLetterIndex] == ' ') {
         currentLetterIndex++;
       }
     });
 
+    // ANNOUNCE THE NEXT LETTER TO TYPE
+    announceCurrentLetter();
+
+    // SEND THE RESULT TO THE ESP32
     if (receivedInteger != null) {
       await sendBrailleResult(isCorrect);
     }
+
+    if (currentLetterIndex >= randomisedText.length) {
+      debugPrint("Exercise completed!");
+    }
   }
 
+  // SEND CORRECT OR INCORRECT RESULT TO ESP32
   Future<void> sendBrailleResult(bool isCorrect) async {
     final characteristic = QualifiedCharacteristic(
       serviceId: esp32ServiceUUID,
@@ -246,16 +305,21 @@ class _MyAppState extends State<MyApp> {
         value: [command],
       );
 
-      print("sent result: $isCorrect, $command");
+      debugPrint("Sent result: $isCorrect, $command");
     } catch (error) {
-      print("failed to send command: $error");
+      debugPrint("Failed to send command: $error");
     }
   }
 
+  // DISPLAY THE CORRECT BRAILLE DOTS
   void displayCorrectButtons() {
+    if (currentLetterIndex >= randomisedText.length) return;
+
     int nextletterIndex =
         randomisedText[currentLetterIndex].toLowerCase().codeUnitAt(0) -
         'a'.codeUnitAt(0);
+
+    if (nextletterIndex < 0 || nextletterIndex >= 26) return;
 
     int correctLetterCode =
         BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
@@ -277,8 +341,12 @@ class _MyAppState extends State<MyApp> {
 
     loadRandomWords();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      scanForBrailleDevice();
+    bleStatusSubscription = ble.statusStream.listen((status) {
+      debugPrint("Bluetooth status changed: $status");
+
+      if (status == BleStatus.ready) {
+        scanForBrailleDevice();
+      }
     });
   }
 
@@ -287,11 +355,12 @@ class _MyAppState extends State<MyApp> {
     scanSubscription?.cancel();
     connectionSubscription?.cancel();
     inputSubscription?.cancel();
+    bleStatusSubscription?.cancel();
+
     super.dispose();
   }
 
   // LEARN PAGE
-
   Widget _buildLearnPage() {
     return Center(
       child: Column(
@@ -401,10 +470,20 @@ class _MyAppState extends State<MyApp> {
 
                     pressedButtons.clear();
                   });
+
+                  // ANNOUNCE THE LETTER AGAIN AFTER BACKSPACE
+                  announceCurrentLetter();
                 },
                 child: const Text("BACKSPACE"),
               ),
             ],
+          ),
+
+          const SizedBox(height: 20),
+
+          ElevatedButton(
+            onPressed: loadRandomWords,
+            child: const Text("NEW EXERCISE"),
           ),
         ],
       ),
@@ -412,7 +491,6 @@ class _MyAppState extends State<MyApp> {
   }
 
   // LIBRARY PAGE
-
   Widget _buildLibraryPage() {
     return const Center(
       child: Text(
@@ -423,7 +501,6 @@ class _MyAppState extends State<MyApp> {
   }
 
   // SETTINGS PAGE
-
   Widget _buildSettingsPage() {
     return const Center(
       child: Text(
