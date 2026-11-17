@@ -1,11 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'dart:math';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'TTS.dart';
+import "TTS.dart";
 
 class BrailleAlphabet {
   static const List<int> binaryLetterSums = [
