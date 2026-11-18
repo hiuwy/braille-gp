@@ -378,22 +378,39 @@ class _MyAppState extends State<MyApp> {
             style: const TextStyle(fontSize: 14),
           ),
 
-          Text.rich(
-            TextSpan(
-              children: List.generate(randomisedText.length, (index) {
-                return TextSpan(
-                  text: randomisedText[index],
-                  style: TextStyle(
-                    decoration: index == currentLetterIndex
-                        ? TextDecoration.underline
-                        : TextDecoration.none,
-                    color: letterColors[index] ?? Colors.black,
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text.rich(
+                  TextSpan(
+                    children: List.generate(randomisedText.length, (index) {
+                      return TextSpan(
+                        text: randomisedText[index],
+                        style: TextStyle(
+                          decoration: index == currentLetterIndex
+                              ? TextDecoration.underline
+                              : TextDecoration.none,
+                          color: letterColors[index] ?? Colors.black,
+                          fontSize: 30,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      );
+                    }),
                   ),
-                );
-              }),
-            ),
+                ),
+              ),
+
+              // SPEAK THE EXERCISE TEXT
+              IconButton(
+                icon: const Icon(Icons.volume_up),
+                iconSize: 32,
+                tooltip: "Speak text",
+                onPressed: randomisedText.isEmpty
+                    ? null
+                    : () => textToSpeech(randomisedText),
+              ),
+            ],
           ),
 
           const SizedBox(height: 35),
