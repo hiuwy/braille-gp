@@ -74,14 +74,6 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  // SPEAK THE LETTER THAT THE USER NEEDS TO TYPE
-  void announceCurrentLetter() {
-    if (currentLetterIndex < randomisedText.length) {
-      final letter = randomisedText[currentLetterIndex];
-
-      //unawaited(textToSpeech(letter));
-    }
-  }
 
   // LOAD RANDOM PRACTICE WORDS
   Future<void> loadRandomWords() async {
@@ -118,7 +110,9 @@ class _MyAppState extends State<MyApp> {
     });
 
     // ANNOUNCE THE FIRST LETTER
-    announceCurrentLetter();
+    if (randomisedText.isNotEmpty) {
+      textToSpeech("letter ${randomisedText[0]}");
+    }
   }
 
   // FIND THE BRAILLELEARNER DEVICE
@@ -277,7 +271,12 @@ class _MyAppState extends State<MyApp> {
     });
 
     // ANNOUNCE THE NEXT LETTER TO TYPE
-    announceCurrentLetter();
+    final feedback = isCorrect ? "Correct" : "Wrong";
+    if (currentLetterIndex < randomisedText.length) {
+      textToSpeech("$feedback. Next, letter ${randomisedText[currentLetterIndex]}");
+    } else {
+      textToSpeech("$feedback. Exercise completed!");
+    }
 
     // SEND THE RESULT TO THE ESP32
     if (receivedInteger != null) {
@@ -338,6 +337,9 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
+
+    // LOAD THE SPEECH MODEL ONCE IN THE BACKGROUND
+    initTextToSpeech();
 
     loadRandomWords();
 
@@ -472,7 +474,7 @@ class _MyAppState extends State<MyApp> {
                   });
 
                   // ANNOUNCE THE LETTER AGAIN AFTER BACKSPACE
-                  announceCurrentLetter();
+                  
                 },
                 child: const Text("BACKSPACE"),
               ),
