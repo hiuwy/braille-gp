@@ -1,0 +1,3 @@
+# Speech model files must keep their exact bytes (LF line endings).
+# CRLF in tokens.txt makes sherpa-onnx abort with "Duplicated token".
+braille_app/assets/tts/** -text
