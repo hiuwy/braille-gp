@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
@@ -7,185 +6,404 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
-/// Offline Piper speech for native Flutter apps (Windows and Android).
+/// Simple offline Piper TTS for Android.
 ///
-/// The Piper model is loaded once into a long-lived background isolate and
-/// reused for every [speak] call, so only the first call pays the load cost.
+/// The Piper model is loaded once and reused for subsequent speech requests.
 class TTS {
-  TTS() {
-    _player.onPlayerComplete.listen((_) {
-      debugPrint('Piper audio playback completed.');
-    });
-  }
+  TTS();
 
   final AudioPlayer _player = AudioPlayer();
-  Future<SendPort>? _worker;
+
+  sherpa.OfflineTts? _engine;
+
+  Future<void>? _initializing;
+
   int _request = 0;
+
   String? _audioFile;
+
   bool _disposed = false;
 
-  /// Starts the worker (once) and returns the port used to send it requests.
-  Future<SendPort> get _ready => _worker ??= _startWorker();
+  /// Initialize Piper once.
+  Future<void> warmUp() async {
+    if (_disposed) return;
 
-  /// Loads the model in the background so the first [speak] is fast.
-  Future<void> warmUp() => _ready;
-
-  Future<SendPort> _startWorker() async {
-    final directory = await _prepareModel();
-    final port = ReceivePort();
-    await Isolate.spawn(
-      _ttsWorker,
-      <Object>[port.sendPort, directory],
-      debugName: 'piper-tts',
-    );
-    // The worker answers with its SendPort once the model is loaded,
-    // or with an error message if loading failed.
-    final reply = await port.first;
-    if (reply is! SendPort) {
-      _worker = null; // allow a retry on the next call
-      throw StateError('$reply');
+    if (_engine != null) {
+      return;
     }
-    debugPrint('Piper model loaded and ready.');
-    return reply;
+
+    _initializing ??= _initialize();
+
+    try {
+      await _initializing;
+    } catch (_) {
+      _initializing = null;
+      rethrow;
+    }
   }
 
+  /// Copy the Piper model from Flutter assets to a writable directory.
   Future<String> _prepareModel() async {
-    final support = await getApplicationSupportDirectory();
-    final directory = Directory('${support.path}/piper-libritts-v1');
-    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    for (final asset in manifest.listAssets().where(
-      (a) => a.startsWith('assets/tts/'),
-    )) {
-      final file = File('${directory.path}/${asset.substring(11)}');
-      if (await file.exists()) continue;
-      await file.parent.create(recursive: true);
+    final supportDirectory = await getApplicationSupportDirectory();
+
+    final modelDirectory = Directory(
+      '${supportDirectory.path}/piper-libritts-v1',
+    );
+
+    await modelDirectory.create(recursive: true);
+
+    const assets = [
+      'assets/tts/en_US-libritts_r-medium.onnx',
+      'assets/tts/tokens.txt',
+    ];
+
+    for (final asset in assets) {
+      final filename = asset.split('/').last;
+
+      final destination = File(
+        '${modelDirectory.path}/$filename',
+      );
+
       final data = await rootBundle.load(asset);
-      await file.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+
+      await destination.writeAsBytes(
+        data.buffer.asUint8List(
+          data.offsetInBytes,
+          data.lengthInBytes,
+        ),
+        flush: true,
+      );
+
+      debugPrint(
+        'Copied $filename (${data.lengthInBytes} bytes)',
+      );
+    }
+
+    // Copy espeak-ng-data recursively.
+    final manifest = await AssetManifest.loadFromAssetBundle(
+      rootBundle,
+    );
+
+    const prefix = 'assets/tts/espeak-ng-data/';
+
+    final espeakAssets = manifest
+        .listAssets()
+        .where((asset) => asset.startsWith(prefix))
+        .toList();
+
+    for (final asset in espeakAssets) {
+      final relativePath = asset.substring(prefix.length);
+
+      if (relativePath.isEmpty) {
+        continue;
+      }
+
+      final destination = File(
+        '${modelDirectory.path}/espeak-ng-data/$relativePath',
+      );
+
+      await destination.parent.create(
+        recursive: true,
+      );
+
+      final data = await rootBundle.load(asset);
+
+      await destination.writeAsBytes(
+        data.buffer.asUint8List(
+          data.offsetInBytes,
+          data.lengthInBytes,
+        ),
         flush: true,
       );
     }
-    return directory.path;
+
+    debugPrint(
+      'Copied ${espeakAssets.length} espeak-ng-data files.',
+    );
+
+    return modelDirectory.path;
   }
 
+  Future<void> _initialize() async {
+    debugPrint('Initializing Piper...');
+
+    final directory = await _prepareModel();
+
+    final modelFile = File(
+      '$directory/en_US-libritts_r-medium.onnx',
+    );
+
+    final tokensFile = File(
+      '$directory/tokens.txt',
+    );
+
+    final espeakDirectory = Directory(
+      '$directory/espeak-ng-data',
+    );
+
+    if (!await modelFile.exists()) {
+      throw StateError(
+        'Piper model not found: ${modelFile.path}',
+      );
+    }
+
+    if (!await tokensFile.exists()) {
+      throw StateError(
+        'Piper tokens.txt not found: ${tokensFile.path}',
+      );
+    }
+
+    if (!await espeakDirectory.exists()) {
+      throw StateError(
+        'Piper espeak-ng-data not found: ${espeakDirectory.path}',
+      );
+    }
+
+    final tokensSize = await tokensFile.length();
+    final modelSize = await modelFile.length();
+
+    debugPrint(
+      'Piper model size: $modelSize bytes',
+    );
+
+    debugPrint(
+      'Piper tokens.txt size: $tokensSize bytes',
+    );
+
+    debugPrint(
+      'Piper espeak directory: ${espeakDirectory.path}',
+    );
+
+    // Initialize Sherpa-ONNX native bindings.
+    sherpa.initBindings();
+
+    debugPrint(
+      'Sherpa-ONNX bindings initialized.',
+    );
+
+    final config = sherpa.OfflineTtsConfig(
+      model: sherpa.OfflineTtsModelConfig(
+        vits: sherpa.OfflineTtsVitsModelConfig(
+          model: modelFile.path,
+          tokens: tokensFile.path,
+          dataDir: espeakDirectory.path,
+
+          noiseScale: 0.333,
+          noiseScaleW: 0.333,
+
+          // 1.0 = normal speed.
+          lengthScale: 1.0,
+        ),
+
+        // Use one thread while testing.
+        numThreads: 1,
+      ),
+    );
+
+    try {
+      _engine = sherpa.OfflineTts(config);
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Piper failed to initialize: $error',
+      );
+
+      debugPrint(
+        '$stackTrace',
+      );
+
+      rethrow;
+    }
+
+    debugPrint(
+      'Piper initialized successfully.',
+    );
+    
+    debugPrint(
+      'Piper speakers: ${_engine!.numSpeakers}',
+    );
+
+    debugPrint(
+      'Piper sample rate: ${_engine!.sampleRate}',
+    );
+  }
+
+  /// Speak text using Piper.
   Future<void> speak(String text) async {
-    if (_disposed || text.trim().isEmpty) return;
-    final request = ++_request;
-    await _player.stop();
-    final worker = await _ready;
-    if (request != _request) return;
-    final temp = await getTemporaryDirectory();
-    final output =
-        '${temp.path}/piper-${DateTime.now().microsecondsSinceEpoch}.wav';
+    if (_disposed) return;
 
-    // Inference runs in the persistent worker isolate, off the UI thread.
-    final reply = ReceivePort();
-    worker.send(<Object>[text, output, reply.sendPort]);
-    final error = await reply.first;
-    if (error != null) throw StateError('$error');
+    final cleanedText = text.trim();
 
-    if (request != _request) {
-      await File(output).delete();
+    if (cleanedText.isEmpty) {
       return;
     }
-    final previous = _audioFile;
-    _audioFile = output;
-    if (previous != null && await File(previous).exists()) {
-      await File(previous).delete();
+
+    try {
+      await warmUp();
+
+      final engine = _engine;
+
+      if (engine == null) {
+        throw StateError(
+          'Piper engine was not initialized.',
+        );
+      }
+
+      final request = ++_request;
+
+      await _player.stop();
+
+      debugPrint(
+        'Piper generating: "$cleanedText"',
+      );
+
+      final audio = engine.generate(
+        text: cleanedText,
+        sid: 0,
+        speed: 1.0,
+      );
+
+      if (audio.samples.isEmpty) {
+        throw StateError(
+          'Piper generated no audio.',
+        );
+      }
+
+      if (request != _request) {
+        return;
+      }
+
+      final temporaryDirectory =
+          await getTemporaryDirectory();
+
+      final output = File(
+        '${temporaryDirectory.path}/'
+        'piper-${DateTime.now().microsecondsSinceEpoch}.wav',
+      );
+
+      final success = sherpa.writeWave(
+        filename: output.path,
+        samples: audio.samples,
+        sampleRate: audio.sampleRate,
+      );
+
+      if (!success) {
+        throw StateError(
+          'Piper could not create WAV file.',
+        );
+      }
+
+      final previous = _audioFile;
+
+      _audioFile = output.path;
+
+      if (previous != null) {
+        final previousFile = File(previous);
+
+        if (await previousFile.exists()) {
+          await previousFile.delete();
+        }
+      }
+
+      if (request != _request) {
+        return;
+      }
+
+      debugPrint(
+        'Piper playing: ${output.path}',
+      );
+
+      await _player.play(
+        DeviceFileSource(output.path),
+      );
+
+      debugPrint(
+        'Piper playback started.',
+      );
+    } catch (error, stackTrace) {
+      debugPrint(
+        'Piper TTS error: $error',
+      );
+
+      debugPrint(
+        '$stackTrace',
+      );
+
+      // Do not allow a TTS failure to crash the application.
     }
-    await _player.play(DeviceFileSource(output));
-    debugPrint('Piper generated and started playing: $output');
   }
 
   Future<void> stop() async {
     _request++;
-    await _player.stop();
+
+    try {
+      await _player.stop();
+    } catch (error) {
+      debugPrint(
+        'Could not stop Piper audio: $error',
+      );
+    }
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+
     _disposed = true;
+
     _request++;
-    await _player.dispose();
-    final worker = _worker;
-    if (worker != null) {
+
+    try {
+      await _player.stop();
+    } catch (_) {}
+
+    try {
+      await _player.dispose();
+    } catch (_) {}
+
+    final engine = _engine;
+
+    _engine = null;
+
+    if (engine != null) {
       try {
-        (await worker).send(null); // tells the worker to free the model and exit
+        engine.free();
       } catch (_) {}
     }
+
     final file = _audioFile;
-    if (file != null && await File(file).exists()) await File(file).delete();
+
+    if (file != null) {
+      final audioFile = File(file);
+
+      if (await audioFile.exists()) {
+        try {
+          await audioFile.delete();
+        } catch (_) {}
+      }
+    }
   }
 }
 
+
+//
+// ONE SHARED TTS INSTANCE
+//
+
 final TTS _sharedTts = TTS();
 
-/// Speaks [text] using the offline Piper TTS engine.
-Future<void> textToSpeech(String text) => _sharedTts.speak(text);
 
-/// Loads the Piper model ahead of time so the first [textToSpeech] is quick.
-Future<void> initTextToSpeech() => _sharedTts.warmUp();
+/// Speak text using Piper.
+Future<void> textToSpeech(String text) {
+  return _sharedTts.speak(text);
+}
 
-/// Stops any speech that is playing or being generated.
-Future<void> stopTextToSpeech() => _sharedTts.stop();
 
-/// Entry point of the background isolate: loads Piper once, then serves
-/// requests of the form `[text, outputPath, replyPort]` until it gets `null`.
-void _ttsWorker(List<Object> arguments) {
-  final mainPort = arguments[0] as SendPort;
-  final directory = arguments[1] as String;
+/// Initialize Piper before the first speech request.
+Future<void> initTextToSpeech() {
+  return _sharedTts.warmUp();
+}
 
-  final sherpa.OfflineTts engine;
-  try {
-    sherpa.initBindings();
-    engine = sherpa.OfflineTts(
-      sherpa.OfflineTtsConfig(
-        model: sherpa.OfflineTtsModelConfig(
-          vits: sherpa.OfflineTtsVitsModelConfig(
-            model: '$directory/en_US-libritts_r-medium.onnx',
-            tokens: '$directory/tokens.txt',
-            dataDir: '$directory/espeak-ng-data',
-            noiseScale: 0.333,
-            noiseScaleW: 0.333,
-            lengthScale: 1.5,
-          ),
-          numThreads: 2,
-        ),
-      ),
-    );
-  } catch (error) {
-    mainPort.send('Could not load Piper: $error');
-    return;
-  }
 
-  final requests = ReceivePort();
-  mainPort.send(requests.sendPort);
-
-  requests.listen((message) {
-    if (message == null) {
-      engine.free();
-      requests.close(); // isolate exits once nothing is listening
-      return;
-    }
-    final request = message as List<Object>;
-    final text = request[0] as String;
-    final output = request[1] as String;
-    final reply = request[2] as SendPort;
-    try {
-      final audio = engine.generate(text: text, sid: 0, speed: 1.0);
-      if (audio.samples.isEmpty) throw StateError('Piper generated no audio.');
-      if (!sherpa.writeWave(
-        filename: output,
-        samples: audio.samples,
-        sampleRate: audio.sampleRate,
-      )) {
-        throw StateError('Could not save Piper audio.');
-      }
-      debugPrint(
-        'Piper: ${audio.samples.length} samples at ${audio.sampleRate} Hz',
-      );
-      reply.send(null);
-    } catch (error) {
-      reply.send('$error');
-    }
-  });
+/// Stop currently playing speech.
+Future<void> stopTextToSpeech() {
+  return _sharedTts.stop();
 }
