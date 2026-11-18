@@ -10,7 +10,7 @@ import 'crash_log.dart';
 
 /// Change this whenever the files in assets/tts/ change, so phones copy the
 /// new model instead of reusing the old one.
-const String _modelVersion = 'piper-libritts-v2';
+const String _modelVersion = 'piper-libritts-v4';
 
 /// Offline Piper speech for native Flutter apps (Windows and Android).
 ///
@@ -130,13 +130,17 @@ class TTS {
       final file = File('${directory.path}/${asset.substring(11)}');
       await file.parent.create(recursive: true);
       final data = await rootBundle.load(asset);
+      var bytes =
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+      // A Windows checkout can give tokens.txt CRLF line endings, which makes
+      // sherpa-onnx abort natively ("Duplicated token") and kill the app.
+      if (asset.endsWith('tokens.txt')) {
+        bytes = Uint8List.fromList(bytes.where((b) => b != 13).toList());
+      }
       // Write to a temporary name, then rename, so a half-written file is
       // never mistaken for a finished one.
       final partial = File('${file.path}.part');
-      await partial.writeAsBytes(
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-        flush: true,
-      );
+      await partial.writeAsBytes(bytes, flush: true);
       if (await file.exists()) await file.delete();
       await partial.rename(file.path);
     }
