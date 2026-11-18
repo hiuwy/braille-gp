@@ -8,6 +8,7 @@ import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import "TTS.dart";
+import "crash_log.dart";
 
 class BrailleAlphabet {
   static const List<int> binaryLetterSums = [
@@ -22,7 +23,8 @@ class BrailleAlphabet {
 }
 
 void main() {
-  runApp(const MyApp());
+  // Logs every error (and every tap) to the terminal; see crash_log.dart.
+  runAppWithCrashLogging(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
@@ -155,8 +157,8 @@ class _MyAppState extends State<MyApp> {
         debugPrint("BrailleLearner found");
         connectToBrailleDevice();
       }
-    }, onError: (error) {
-      debugPrint("Scanning error: $error");
+    }, onError: (error, stack) {
+      CrashLog.error("BLE", "Scanning error: $error", stack);
     });
   }
 
@@ -175,7 +177,11 @@ class _MyAppState extends State<MyApp> {
       },
       connectionTimeout: const Duration(seconds: 10),
     ).listen((connectionState) {
-      debugPrint("Connection state: ${connectionState.connectionState}");
+      CrashLog.log(
+        "BLE",
+        "Connection state: ${connectionState.connectionState}"
+        "${connectionState.failure != null ? " (reason: ${connectionState.failure})" : ""}",
+      );
 
       if (connectionState.connectionState ==
           DeviceConnectionState.connected) {
@@ -185,29 +191,34 @@ class _MyAppState extends State<MyApp> {
           isConnected = true;
         });
 
-        debugPrint("Connected");
         listenForBraille();
       }
 
       if (connectionState.connectionState ==
           DeviceConnectionState.disconnected) {
+        inputSubscription?.cancel();
+        inputSubscription = null;
+
         if (!mounted) return;
 
         setState(() {
           isConnected = false;
         });
       }
-    }, onError: (error) {
-      debugPrint("Connection error: $error");
+    }, onError: (error, stack) {
+      CrashLog.error("BLE", "Connection error: $error", stack);
     });
   }
 
   // LISTEN FOR BRAILLE INPUT FROM THE ESP32
   void listenForBraille() {
+    final deviceId = esp32ID;
+    if (deviceId == null) return;
+
     final characteristic = QualifiedCharacteristic(
       serviceId: esp32ServiceUUID,
       characteristicId: inputUUID,
-      deviceId: esp32ID!,
+      deviceId: deviceId,
     );
 
     inputSubscription?.cancel();
@@ -218,12 +229,12 @@ class _MyAppState extends State<MyApp> {
       if (data.length == 1) {
         int receivedInteger = data[0];
 
-        debugPrint("Received integer: $receivedInteger");
+        CrashLog.log("BLE", "Received integer: $receivedInteger");
 
         submitBrailleButtons(receivedInteger);
       }
-    }, onError: (error) {
-      debugPrint("Notification error: $error");
+    }, onError: (error, stack) {
+      CrashLog.error("BLE", "Notification error: $error", stack);
     });
   }
 
@@ -253,6 +264,8 @@ class _MyAppState extends State<MyApp> {
     bool isCorrect =
         submittedButtonBinary ==
         BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
+
+    if (!mounted) return;
 
     setState(() {
       letterColors[currentLetterIndex] =
@@ -290,10 +303,13 @@ class _MyAppState extends State<MyApp> {
 
   // SEND CORRECT OR INCORRECT RESULT TO ESP32
   Future<void> sendBrailleResult(bool isCorrect) async {
+    final deviceId = esp32ID;
+    if (deviceId == null || !isConnected) return;
+
     final characteristic = QualifiedCharacteristic(
       serviceId: esp32ServiceUUID,
       characteristicId: outputUUID,
-      deviceId: esp32ID!,
+      deviceId: deviceId,
     );
 
     int command = isCorrect ? 0x01 : 0x02;
@@ -304,9 +320,9 @@ class _MyAppState extends State<MyApp> {
         value: [command],
       );
 
-      debugPrint("Sent result: $isCorrect, $command");
-    } catch (error) {
-      debugPrint("Failed to send command: $error");
+      CrashLog.log("BLE", "Sent result: $isCorrect, $command");
+    } catch (error, stack) {
+      CrashLog.error("BLE", "Failed to send command: $error", stack);
     }
   }
 
