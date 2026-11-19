@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import "TTS.dart";
 import "crash_log.dart";
 import "braille_device.dart";
+import "settings_tab.dart";
+import "library_tab.dart";
 
 class BrailleAlphabet {
   static const List<int> binaryLetterSums = [
@@ -331,63 +333,6 @@ class _MyAppState extends State<MyApp> {
     );
   }
 
-  Widget _buildLibraryPage() {
-    return const Center(
-      child: Text(
-        'Library',
-        style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-
-  Widget _buildSettingsPage() {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
-      body: ListView(
-        children: [
-          SwitchListTile(
-            title: const Text('dark mode'),
-            secondary: Icon(
-              _themeMode == ThemeMode.dark
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
-            ),
-            value: _themeMode == ThemeMode.dark,
-            onChanged: (value) {
-              setState(() {
-                _themeMode = value
-                    ? ThemeMode.dark
-                    : ThemeMode.light;
-              });
-            },
-          ),
-
-          ListTile(
-            leading: Icon(
-              device.isConnected
-                  ? Icons.bluetooth_connected
-                  : Icons.bluetooth_disabled,
-            ),
-            title: const Text('braille device'),
-            trailing: ElevatedButton(
-              onPressed: device.scanForBrailleDevice,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: device.isConnected ? Colors.green : Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: Text(
-                device.isConnected ? "found" : "find",
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -411,9 +356,17 @@ class _MyAppState extends State<MyApp> {
         body: IndexedStack(
           index: _selectedIndex,
           children: [
-            _buildLibraryPage(),
+            LibraryTab(device: device),
             _buildLearnPage(),
-            _buildSettingsPage(),
+            SettingsTab(
+              themeMode: _themeMode,
+              onThemeChanged: (newTheme) {
+                setState(() {
+                  _themeMode = newTheme;
+                });
+              },
+              device: device,
+            ),
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(
