@@ -62,7 +62,20 @@ flutter:
 
   assets:
     - assets/braille_words_100.csv
-    - assets/tts/
+    # One folder per voice (model + tokens). See lib/voices.dart.
+    - assets/tts/voices/en_GB-alan-medium/
+    - assets/tts/voices/en_GB-alba-medium/
+    - assets/tts/voices/en_GB-cori-medium/
+    - assets/tts/voices/en_GB-jenny_dioco-medium/
+    - assets/tts/voices/en_GB-northern_english_male-medium/
+    - assets/tts/voices/en_GB-vctk-medium/
+    - assets/tts/voices/en_US-amy-medium/
+    - assets/tts/voices/en_US-bryce-medium/
+    - assets/tts/voices/en_US-hfc_female-medium/
+    - assets/tts/voices/en_US-joe-medium/
+    - assets/tts/voices/en_US-lessac-medium/
+    - assets/tts/voices/en_US-libritts_r-medium/
+    - assets/tts/voices/en_US-ryan-medium/
     - assets/tts/espeak-ng-data/
     - assets/tts/espeak-ng-data/lang/
     - assets/tts/espeak-ng-data/lang/aav/

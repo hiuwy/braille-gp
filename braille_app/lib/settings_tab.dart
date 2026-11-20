@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'braille_device.dart';
+import 'voices_page.dart';
 
 class SettingsTab extends StatelessWidget {
   final ThemeMode themeMode;
@@ -57,6 +58,15 @@ class SettingsTab extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.record_voice_over),
+            title: const Text('voices'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const VoicesPage()),
             ),
           ),
         ],
