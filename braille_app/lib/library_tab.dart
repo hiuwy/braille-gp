@@ -1,6 +1,5 @@
-
 import 'package:material_ui/material_ui.dart';
-import 'braille_device.dart';
+import 'bluetooth.dart';
 
 class LibraryTab extends StatelessWidget {
   final BrailleDevice device;

@@ -1,27 +1,13 @@
-
-import 'dart:async';
-import 'dart:math';
-
+import 'package:accessibility_tools/accessibility_tools.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
 
 import "TTS.dart";
 import "crash_log.dart";
-import "braille_device.dart";
+import "bluetooth.dart";
+import "app_settings.dart";
 import "settings_tab.dart";
 import "library_tab.dart";
-
-class BrailleAlphabet {
-  static const List<int> binaryLetterSums = [
-    1, 3, 9, 25, 17, 11, 27, 19, 10, 26,
-    5, 7, 13, 29, 21, 15, 31, 23, 14, 30,
-    37, 39, 58, 45, 61, 53
-  ];
-
-  static int getCurrentLetterCode(int letterCode) {
-    return binaryLetterSums[letterCode];
-  }
-}
+import "learn_tab.dart";
 
 void main() {
   runAppWithCrashLogging(const MyApp());
@@ -36,20 +22,9 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   final BrailleDevice device = BrailleDevice();
-  late StreamSubscription<int> pressSubscription;
-
-  Set<int> pressedButtons = {};
-  Set<int> correctButtons = {};
-
-  int wordAmount = 5;
-  int currentLetterIndex = 0;
-  String randomisedText = "";
-
-  Map<int, Color> letterColors = {};
-  Random random = Random();
+  final AppSettings settings = AppSettings();
 
   int _selectedIndex = 1;
-  ThemeMode _themeMode = ThemeMode.light;
 
   void _onItemTapped(int index) {
     setState(() {
@@ -57,279 +32,32 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  Future<void> loadRandomWords() async {
-    String csvData = await rootBundle.loadString(
-      'assets/braille_words_100.csv'
-    );
-
-    List<String> chosenWords = csvData
-        .split(RegExp(r'\r?\n'))
-        .map((word) => word.trim())
-        .where((word) => word.isNotEmpty)
-        .toList();
-
-    if (chosenWords.length < wordAmount) {
-      debugPrint("Not enough words in the CSV file.");
-      return;
-    }
-
-    List<String> randomWords = [];
-
-    for (int i = 0; i < wordAmount; i++) {
-      int randomIndex = random.nextInt(chosenWords.length);
-      randomWords.add(chosenWords.removeAt(randomIndex));
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      randomisedText = randomWords.join(' ');
-      currentLetterIndex = 0;
-      letterColors.clear();
-      pressedButtons.clear();
-      correctButtons.clear();
-    });
-
-    if (randomisedText.isNotEmpty) {
-      textToSpeech("letter ${randomisedText[0]}");
-    }
-  }
-
-  Future<void> submitBrailleButtons([int? receivedInteger]) async {
-    if (currentLetterIndex >= randomisedText.length) {
-      debugPrint("Exercise finished");
-      return;
-    }
-
-    String nextLetter = randomisedText[currentLetterIndex];
-
-    int nextletterIndex =
-        nextLetter.toLowerCase().codeUnitAt(0) -
-        'a'.codeUnitAt(0);
-
-    if (nextletterIndex < 0 || nextletterIndex >= 26) {
-      debugPrint("Invalid letter: $nextLetter");
-      return;
-    }
-
-    int submittedButtonBinary = receivedInteger ?? pressedButtons.fold<int>(
-      0,
-      (sum, dot) => sum + dot,
-    );
-
-    bool isCorrect =
-        submittedButtonBinary ==
-        BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
-
-    if (!mounted) return;
-
-    setState(() {
-      letterColors[currentLetterIndex] =
-          isCorrect ? Colors.grey : Colors.red;
-
-      currentLetterIndex++;
-
-      pressedButtons.clear();
-      correctButtons.clear();
-
-      while (currentLetterIndex < randomisedText.length &&
-          randomisedText[currentLetterIndex] == ' ') {
-        currentLetterIndex++;
-      }
-    });
-
-    final feedback = isCorrect ? "Correct" : "Wrong";
-
-    if (currentLetterIndex < randomisedText.length) {
-      textToSpeech("$feedback. Next, letter ${randomisedText[currentLetterIndex]}");
-    } else {
-      textToSpeech("$feedback. Exercise completed!");
-    }
-
-    if (receivedInteger != null) {
-      await device.sendBrailleResult(isCorrect);
-    }
-
-    if (currentLetterIndex >= randomisedText.length) {
-      debugPrint("Exercise completed!");
-    }
-  }
-
-  void displayCorrectButtons() {
-    if (currentLetterIndex >= randomisedText.length) return;
-
-    int nextletterIndex =
-        randomisedText[currentLetterIndex].toLowerCase().codeUnitAt(0) -
-        'a'.codeUnitAt(0);
-
-    if (nextletterIndex < 0 || nextletterIndex >= 26) return;
-
-    int correctLetterCode =
-        BrailleAlphabet.getCurrentLetterCode(nextletterIndex);
-
-    correctButtons.clear();
-
-    for (int i = 0; i < 6; i++) {
-      int dotBinaryValue = 1 << i;
-
-      if ((correctLetterCode & dotBinaryValue) != 0) {
-        correctButtons.add(dotBinaryValue);
-      }
-    }
-  }
-
   @override
   void initState() {
     super.initState();
 
     initTextToSpeech();
-    loadRandomWords();
 
     device.addListener(() => setState(() {}));
-    pressSubscription = device.onPress.listen(submitBrailleButtons);
+    settings.addListener(() => setState(() {}));
     device.start();
   }
 
   @override
   void dispose() {
-    pressSubscription.cancel();
+    settings.dispose();
     device.dispose();
     super.dispose();
   }
 
-  Widget _buildLearnPage() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: Text.rich(
-                  TextSpan(
-                    children: List.generate(randomisedText.length, (index) {
-                      return TextSpan(
-                        text: randomisedText[index],
-                        style: TextStyle(
-                          decoration: index == currentLetterIndex
-                              ? TextDecoration.underline
-                              : TextDecoration.none,
-                          color: letterColors[index] ??
-                            (_themeMode == ThemeMode.dark
-                                ? Colors.white
-                                : Colors.black),
-                          fontSize: 30,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      );
-                    }),
-                  ),
-                  textAlign: TextAlign.center
-                ),
-              ),
-
-              /*IconButton(
-                icon: const Icon(Icons.volume_up),
-                iconSize: 32,
-                tooltip: "Speak text",
-                onPressed: randomisedText.isEmpty
-                    ? null
-                    : () => textToSpeech(randomisedText),
-              ), */
-            ],
-          ),
-
-          const SizedBox(height: 35),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              for (int col = 0; col < 2; col++)
-                Column(
-                  children: [
-                    for (int row = 0; row < 3; row++)
-                      SizedBox(
-                        width: 70,
-                        height: 70,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: pressedButtons.contains(
-                              1 << (col * 3 + row)
-                            )
-                                ? Colors.blue
-                                : correctButtons.contains(
-                                    1 << (col * 3 + row)
-                                  )
-                                    ? const Color.fromARGB(
-                                        255, 168, 189, 198
-                                      )
-                                    : Colors.grey,
-                          ),
-                          onPressed: () {
-                            int dotBinaryValue = 1 << (col * 3 + row);
-
-                            setState(() {
-                              if (pressedButtons.contains(dotBinaryValue)) {
-                                pressedButtons.remove(dotBinaryValue);
-                              } else {
-                                pressedButtons.add(dotBinaryValue);
-                              }
-                            });
-                          },
-                          child: const Text(""),
-                        ),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-
-          const SizedBox(height: 35),
-
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton(
-                onPressed: () {
-                  submitBrailleButtons();
-                },
-                child: const Text("SUBMIT"),
-              ),
-
-              const SizedBox(width: 10),
-
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    if (currentLetterIndex > 0) {
-                      currentLetterIndex--;
-
-                      while (currentLetterIndex > 0 &&
-                          randomisedText[currentLetterIndex] == ' ') {
-                        currentLetterIndex--;
-                      }
-
-                      letterColors.remove(currentLetterIndex);
-                      displayCorrectButtons();
-                    }
-
-                    pressedButtons.clear();
-                  });
-                },
-                child: const Text("BACKSPACE"),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          ElevatedButton(
-            onPressed: loadRandomWords,
-            child: const Text("NEW EXERCISE"),
-          ),
-        ],
+  ThemeData _buildTheme(Brightness brightness) {
+    return ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: Colors.blue,
+        brightness: brightness,
       ),
+      visualDensity: settings.visualDensity,
+      useMaterial3: true,
     );
   }
 
@@ -337,36 +65,47 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      themeMode: _themeMode,
+      showSemanticsDebugger: settings.screenReaderMode,
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+
+        Widget app = MediaQuery(
+          data: mediaQuery.copyWith(
+            textScaler: TextScaler.linear(
+              mediaQuery.textScaler.scale(1.0) * settings.textScale,
+            ),
+            boldText: mediaQuery.boldText || settings.boldText,
+          ),
+          child: child!,
+        );
+
+        final direction = settings.textDirection;
+        if (direction != null) {
+          app = Directionality(textDirection: direction, child: app);
+        }
+
+        final filter = settings.colorFilter;
+        if (filter != null) {
+          app = ColorFiltered(colorFilter: filter, child: app);
+        }
+
+        return AccessibilityTools(
+          testingToolsConfiguration: const TestingToolsConfiguration(
+            enabled: false, // your Settings tab replaces the wrench panel
+          ),
+          child: app,
+        );
+      },
+      theme: _buildTheme(Brightness.light),
+      darkTheme: _buildTheme(Brightness.dark),
+      themeMode: settings.themeMode,
       home: Scaffold(
         body: IndexedStack(
           index: _selectedIndex,
           children: [
             LibraryTab(device: device),
-            _buildLearnPage(),
-            SettingsTab(
-              themeMode: _themeMode,
-              onThemeChanged: (newTheme) {
-                setState(() {
-                  _themeMode = newTheme;
-                });
-              },
-              device: device,
-            ),
+            LearnTab(device: device),
+            SettingsTab(settings: settings, device: device),
           ],
         ),
         bottomNavigationBar: BottomNavigationBar(

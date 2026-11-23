@@ -40,6 +40,7 @@ dependencies:
   audioplayers: ^6.8.1
   path_provider: ^2.1.6
   material_ui: ^1.11.1
+  accessibility_tools: ^3.0.0
 
 dev_dependencies:
   flutter_test:
