@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'app_settings.dart';
 import 'bluetooth.dart';
-import 'voices_page.dart';
 
 class SettingsTab extends StatelessWidget {
   final AppSettings settings;
