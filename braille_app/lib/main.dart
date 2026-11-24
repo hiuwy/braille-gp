@@ -104,7 +104,7 @@ class _MyAppState extends State<MyApp> {
           index: _selectedIndex,
           children: [
             LibraryTab(device: device),
-            LearnTab(device: device),
+            LearnTab(device: device, isActive: _selectedIndex == 1),
             SettingsTab(settings: settings, device: device),
           ],
         ),

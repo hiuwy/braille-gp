@@ -37,12 +37,6 @@ class SettingsTab extends StatelessWidget {
     return Text(text, overflow: TextOverflow.ellipsis);
   }
 
-  // The darker blue used for section titles and their lines.
-  Color _accent(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? Colors.blue.shade300 : Colors.blue.shade800;
-  }
-
   // Section title with a line running to the right of it.
   Widget _header(BuildContext context, String title) {
     final textColor = Theme.of(context).colorScheme.onSurface;
@@ -205,7 +199,7 @@ class SettingsTab extends StatelessWidget {
             ),
           ]),
 
-          ..._section(context, 'Screen Reader', [
+          ..._section(context, 'Text-to-Speech', [
             SwitchListTile(
               title: const Text('screen reader mode'),
               subtitle: const Text('shows how screen readers see the app'),

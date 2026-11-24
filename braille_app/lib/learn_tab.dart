@@ -17,12 +17,43 @@ class BrailleAlphabet {
   static int getCurrentLetterCode(int letterCode) {
     return binaryLetterSums[letterCode];
   }
+
+  static List<int> dotNumbers(int letterIndex) {
+    final code = binaryLetterSums[letterIndex];
+    return [
+      for (int i = 0; i < 6; i++)
+        if ((code & (1 << i)) != 0) i + 1,
+    ];
+  }
+
+  static String describeDots(int letterIndex) {
+    final numbers = dotNumbers(letterIndex);
+
+    if (numbers.length == 1) return "dot ${numbers.first}";
+
+    final allButLast = numbers.sublist(0, numbers.length - 1).join(", ");
+    return "dots $allButLast and ${numbers.last}";
+  }
+
+  static const List<String> spokenNames = [
+    "eigh", "bee", "see", "dee", "ee", "eff", "jee", "aitch", "eye", "jay",
+    "kay", "el", "em", "en", "oh", "pee", "cue", "are", "ess", "tee",
+    "you", "vee", "double you", "ex", "why", "zee",
+  ];
+
+  static String spokenLetter(String letter) {
+    final index = letter.toLowerCase().codeUnitAt(0) - 'a'.codeUnitAt(0);
+
+    if (index < 0 || index >= spokenNames.length) return letter;
+    return spokenNames[index];
+  }
 }
 
-class  LearnTab extends StatefulWidget {
+class LearnTab extends StatefulWidget {
   final BrailleDevice device;
+  final bool isActive;
 
-  const LearnTab({super.key, required this.device});
+  const LearnTab({super.key, required this.device, required this.isActive});
 
   @override
   State<LearnTab> createState() => _LearnTabState();
@@ -89,11 +120,15 @@ class _LearnTabState extends State<LearnTab> {
     });
 
     if (randomisedText.isNotEmpty) {
-      textToSpeech("letter ${randomisedText[0]}");
+      textToSpeech(
+        "letter, ${BrailleAlphabet.spokenLetter(randomisedText[0])}",
+      );
     }
   }
 
   Future<void> submitBrailleButtons([int? receivedInteger]) async {
+    if (!widget.isActive) return; // ignore presses meant for another tab
+
     if (currentLetterIndex >= randomisedText.length) {
       debugPrint("Exercise finished");
       return;
@@ -139,7 +174,10 @@ class _LearnTabState extends State<LearnTab> {
     final feedback = isCorrect ? "Correct" : "Wrong";
 
     if (currentLetterIndex < randomisedText.length) {
-      textToSpeech("$feedback. Next, letter ${randomisedText[currentLetterIndex]}");
+      textToSpeech(
+        "$feedback. Next, letter "
+        "${BrailleAlphabet.spokenLetter(randomisedText[currentLetterIndex])}",
+      );
     } else {
       textToSpeech("$feedback. Exercise completed!");
     }
@@ -249,7 +287,8 @@ class _LearnTabState extends State<LearnTab> {
                           },
                           child: Semantics(
                             label: 'Dot ${col * 3 + row + 1}',
-                            selected: pressedButtons.contains(1 << (col * 3 + row)),
+                            selected: pressedButtons
+                                .contains(1 << (col * 3 + row)),
                             child: const SizedBox.shrink(),
                           ),
                         ),
