@@ -47,7 +47,7 @@ class _LetterCard extends StatelessWidget {
 
   void _speak() {
     textToSpeech(
-      "Letter, ${BrailleAlphabet.spokenLetter(letter)},"
+      "Letter, ${BrailleAlphabet.spokenLetter(letter)}. "
       "${BrailleAlphabet.describeDots(index)}",
     );
   }

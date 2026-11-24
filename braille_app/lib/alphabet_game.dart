@@ -69,7 +69,7 @@ class _AlphabetGamePageState extends State<AlphabetGamePage> {
     _resetRound(List.generate(26, (i) => i));
     pressSubscription = widget.device.onPress.listen(submit);
 
-    textToSpeech("Letter $spokenLetter");
+    textToSpeech("Letter, $spokenLetter.");
   }
 
   @override
@@ -149,7 +149,7 @@ class _AlphabetGamePageState extends State<AlphabetGamePage> {
       if (finished) {
         _speakResults();
       } else {
-        textToSpeech("Correct. Next, letter $spokenLetter");
+        textToSpeech("Correct. Next, letter, $spokenLetter.");
       }
     } else {
       // Stay on the same letter, reveal the answer and let them try again.
@@ -230,7 +230,7 @@ class _AlphabetGamePageState extends State<AlphabetGamePage> {
 
   void _startNewRound(List<int> letters) {
     setState(() => _resetRound(letters));
-    textToSpeech("Letter $spokenLetter");
+    textToSpeech("Letter, $spokenLetter.");
   }
 
   Widget _buildResults(BuildContext context) {

@@ -36,9 +36,9 @@ class BrailleAlphabet {
   }
 
   static const List<String> spokenNames = [
-    "eigh", "bee", "see", "dee", "ee", "eff", "jee", "aitch", "eye", "jay",
-    "kay", "el", "em", "en", "oh", "pee", "cue", "are", "ess", "tee",
-    "you", "vee", "double you", "ex", "why", "zee",
+    "eigh", "bee", "see", "dee", "ee", "ef", "jee", "aitch", "eye", "jay",
+    "kay", "ell", "em", "en", "oh", "pee", "cue", "ar", "ess", "tee",
+    "yoo", "vee", "double yoo", "ex", "why", "zee",
   ];
 
   static String spokenLetter(String letter) {
@@ -175,7 +175,7 @@ class _LearnTabState extends State<LearnTab> {
 
     if (currentLetterIndex < randomisedText.length) {
       textToSpeech(
-        "$feedback. Next, letter "
+        "$feedback. Next, letter, "
         "${BrailleAlphabet.spokenLetter(randomisedText[currentLetterIndex])}",
       );
     } else {
